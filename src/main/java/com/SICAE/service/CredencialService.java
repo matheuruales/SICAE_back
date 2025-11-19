@@ -1,0 +1,110 @@
+package com.sicae.service;
+
+import java.time.Instant;
+import java.util.List;
+import java.util.UUID;
+
+import org.springframework.stereotype.Service;
+
+import com.sicae.dto.GenerarQrRequest;
+import com.sicae.dto.ValidarQrRequest;
+import com.sicae.model.Credencial;
+import com.sicae.model.EstadoCredencial;
+import com.sicae.model.EventoAcceso;
+import com.sicae.model.Persona;
+import com.sicae.model.QRToken;
+import com.sicae.model.ResultadoAcceso;
+import com.sicae.model.TipoCredencial;
+import com.sicae.model.TipoEvento;
+import com.sicae.repository.CredencialRepository;
+import com.sicae.repository.EventoAccesoRepository;
+import com.sicae.repository.PersonaRepository;
+
+import jakarta.validation.ValidationException;
+import lombok.RequiredArgsConstructor;
+
+@Service
+@RequiredArgsConstructor
+public class CredencialService {
+
+    private final CredencialRepository credencialRepository;
+    private final PersonaRepository personaRepository;
+    private final EventoAccesoRepository eventoAccesoRepository;
+
+    public Credencial generarQr(GenerarQrRequest request) {
+        Persona persona = personaRepository.findById(request.personaId())
+                .orElseThrow(() -> new ValidationException("Persona no encontrada"));
+        Instant now = Instant.now();
+        Instant expiracion = now.plusSeconds(request.vigenciaSegundos() != null ? request.vigenciaSegundos() : 60);
+
+        QRToken token = QRToken.builder()
+                .code(UUID.randomUUID().toString())
+                .usado(false)
+                .fechaGeneracion(now)
+                .expiraEn(expiracion)
+                .build();
+
+        Credencial credencial = Credencial.builder()
+                .personaId(persona.getId())
+                .estado(EstadoCredencial.ACTIVA)
+                .emitidaEn(now)
+                .expiraEn(expiracion)
+                .tipo(TipoCredencial.QR)
+                .qrToken(token)
+                .build();
+
+        return credencialRepository.save(credencial);
+    }
+
+    public List<Credencial> listar() {
+        return credencialRepository.findAll();
+    }
+
+    public EventoAcceso validarQr(ValidarQrRequest request) {
+        Instant now = Instant.now();
+        ResultadoAcceso resultado = ResultadoAcceso.DENEGADO;
+        String motivo = "Código no encontrado";
+        Credencial credencial = credencialRepository.findByQrTokenCode(request.qrCode()).orElse(null);
+
+        if (credencial != null) {
+            if (credencial.getEstado() == EstadoCredencial.REVOCADA || credencial.getEstado() == EstadoCredencial.INACTIVA) {
+                motivo = "Credencial revocada o inactiva";
+            } else if (credencial.getQrToken() == null) {
+                motivo = "Token no disponible";
+            } else if (Boolean.TRUE.equals(credencial.getQrToken().isUsado())) {
+                motivo = "Ya fue usado";
+            } else if (credencial.getQrToken().getExpiraEn().isBefore(now)) {
+                motivo = "Token expirado";
+                credencial.setEstado(EstadoCredencial.EXPIRADA);
+                credencialRepository.save(credencial);
+            } else {
+                resultado = ResultadoAcceso.PERMITIDO;
+                motivo = "Acceso permitido";
+                credencial.getQrToken().setUsado(true);
+                credencialRepository.save(credencial);
+            }
+        }
+
+        EventoAcceso evento = EventoAcceso.builder()
+                .credencialId(credencial != null ? credencial.getId() : null)
+                .personaId(credencial != null ? credencial.getPersonaId() : null)
+                .fechaHora(now)
+                .resultado(resultado)
+                .motivo(motivo)
+                .qrCode(request.qrCode())
+                .ipLector(request.ipLector())
+                .puntoAccesoId(request.puntoAccesoId())
+                .tipoEvento(resultado == ResultadoAcceso.PERMITIDO ? TipoEvento.ENTRADA : TipoEvento.INTENTO)
+                .build();
+
+        return eventoAccesoRepository.save(evento);
+    }
+
+    public Credencial revocar(String credencialId, String motivo) {
+        Credencial credencial = credencialRepository.findById(credencialId)
+                .orElseThrow(() -> new ValidationException("Credencial no encontrada"));
+        credencial.setEstado(EstadoCredencial.REVOCADA);
+        credencial.setMotivoRevocacion(motivo);
+        return credencialRepository.save(credencial);
+    }
+}
