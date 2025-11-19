@@ -74,6 +74,7 @@ public class CredencialService {
         ResultadoAcceso resultado = ResultadoAcceso.DENEGADO;
         String motivo = "Código no encontrado";
         Credencial credencial = credencialRepository.findByQrTokenCode(request.qrCode()).orElse(null);
+        TipoEvento tipoEvento = TipoEvento.INTENTO;
 
         if (credencial != null) {
             if (credencial.getEstado() == EstadoCredencial.REVOCADA || credencial.getEstado() == EstadoCredencial.INACTIVA) {
@@ -89,6 +90,7 @@ public class CredencialService {
             } else {
                 resultado = ResultadoAcceso.PERMITIDO;
                 motivo = "Acceso permitido";
+                tipoEvento = resolverTipoEntradaSalida(credencial.getPersonaId(), request.puntoAccesoId());
                 credencial.getQrToken().setUsado(true);
                 credencialRepository.save(credencial);
             }
@@ -103,7 +105,7 @@ public class CredencialService {
                 .qrCode(request.qrCode())
                 .ipLector(request.ipLector())
                 .puntoAccesoId(request.puntoAccesoId())
-                .tipoEvento(resultado == ResultadoAcceso.PERMITIDO ? TipoEvento.ENTRADA : TipoEvento.INTENTO)
+                .tipoEvento(resultado == ResultadoAcceso.PERMITIDO ? tipoEvento : TipoEvento.INTENTO)
                 .build();
 
         return eventoAccesoRepository.save(evento);
@@ -115,6 +117,25 @@ public class CredencialService {
         credencial.setEstado(EstadoCredencial.REVOCADA);
         credencial.setMotivoRevocacion(motivo);
         return credencialRepository.save(credencial);
+    }
+
+    private TipoEvento resolverTipoEntradaSalida(String personaId, String puntoAccesoId) {
+        if (personaId == null) {
+            return TipoEvento.ENTRADA;
+        }
+
+        EventoAcceso ultimo = null;
+        if (puntoAccesoId != null) {
+            ultimo = eventoAccesoRepository.findTopByPersonaIdAndPuntoAccesoIdOrderByFechaHoraDesc(personaId, puntoAccesoId);
+        }
+        if (ultimo == null) {
+            ultimo = eventoAccesoRepository.findTopByPersonaIdOrderByFechaHoraDesc(personaId);
+        }
+
+        if (ultimo != null && ultimo.getResultado() == ResultadoAcceso.PERMITIDO && ultimo.getTipoEvento() == TipoEvento.ENTRADA) {
+            return TipoEvento.SALIDA;
+        }
+        return TipoEvento.ENTRADA;
     }
 
     private String obtenerPersonaDelUsuarioActual() {
