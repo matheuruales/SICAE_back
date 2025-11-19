@@ -29,6 +29,9 @@ public class Usuario {
 
     private Rol rol;
 
+    @Indexed(unique = true, sparse = true)
+    private String personaId;
+
     private boolean activo;
 
     private Instant fechaCreacion;

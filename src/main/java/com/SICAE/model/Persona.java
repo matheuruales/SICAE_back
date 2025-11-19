@@ -3,6 +3,7 @@ package com.sicae.model;
 import java.time.LocalDate;
 
 import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 import lombok.AllArgsConstructor;
@@ -18,6 +19,10 @@ import lombok.NoArgsConstructor;
 public class Persona {
     @Id
     private String id;
+
+    @Indexed(unique = true)
+    private String usuarioId;
+
     private String nombreCompleto;
     private String documento;
     private LocalDate fechaNacimiento;

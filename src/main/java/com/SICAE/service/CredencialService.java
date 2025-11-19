@@ -5,6 +5,8 @@ import java.util.List;
 import java.util.UUID;
 
 import org.springframework.stereotype.Service;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 import com.sicae.dto.GenerarQrRequest;
 import com.sicae.dto.ValidarQrRequest;
@@ -19,6 +21,7 @@ import com.sicae.model.TipoEvento;
 import com.sicae.repository.CredencialRepository;
 import com.sicae.repository.EventoAccesoRepository;
 import com.sicae.repository.PersonaRepository;
+import com.sicae.repository.UsuarioRepository;
 
 import jakarta.validation.ValidationException;
 import lombok.RequiredArgsConstructor;
@@ -30,9 +33,15 @@ public class CredencialService {
     private final CredencialRepository credencialRepository;
     private final PersonaRepository personaRepository;
     private final EventoAccesoRepository eventoAccesoRepository;
+    private final UsuarioRepository usuarioRepository;
 
     public Credencial generarQr(GenerarQrRequest request) {
-        Persona persona = personaRepository.findById(request.personaId())
+        String personaId = request.personaId();
+        if (personaId == null || personaId.isBlank()) {
+            personaId = obtenerPersonaDelUsuarioActual();
+        }
+
+        Persona persona = personaRepository.findById(personaId)
                 .orElseThrow(() -> new ValidationException("Persona no encontrada"));
         Instant now = Instant.now();
         Instant expiracion = now.plusSeconds(request.vigenciaSegundos() != null ? request.vigenciaSegundos() : 60);
@@ -106,5 +115,22 @@ public class CredencialService {
         credencial.setEstado(EstadoCredencial.REVOCADA);
         credencial.setMotivoRevocacion(motivo);
         return credencialRepository.save(credencial);
+    }
+
+    private String obtenerPersonaDelUsuarioActual() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || !authentication.isAuthenticated()) {
+            throw new ValidationException("No se pudo resolver el usuario autenticado para generar la credencial");
+        }
+
+        String correo = authentication.getName();
+        com.sicae.model.Usuario usuario = usuarioRepository.findByCorreo(correo)
+                .orElseThrow(() -> new ValidationException("Usuario no encontrado para generar la credencial"));
+
+        if (usuario.getPersonaId() == null || usuario.getPersonaId().isBlank()) {
+            throw new ValidationException("El usuario no tiene una persona vinculada");
+        }
+
+        return usuario.getPersonaId();
     }
 }

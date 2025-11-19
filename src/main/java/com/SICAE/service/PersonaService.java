@@ -2,7 +2,9 @@ package com.sicae.service;
 
 import java.util.List;
 
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.web.server.ResponseStatusException;
 
 import com.sicae.dto.PersonaRequest;
 import com.sicae.model.Persona;
@@ -17,23 +19,8 @@ public class PersonaService {
     private final PersonaRepository personaRepository;
 
     public Persona registrar(PersonaRequest request) {
-        Persona persona = Persona.builder()
-                .nombreCompleto(request.nombreCompleto())
-                .documento(request.documento())
-                .fechaNacimiento(request.fechaNacimiento())
-                .telefono(request.telefono())
-                .tipo(request.tipo())
-                .numeroEmpleado(request.numeroEmpleado())
-                .departamento(request.departamento())
-                .fechaIngreso(request.fechaIngreso())
-                .empresa(request.empresa())
-                .personaContacto(request.personaContacto())
-                .motivoVisita(request.motivoVisita())
-                .empresaContratista(request.empresaContratista())
-                .numeroContacto(request.numeroContacto())
-                .fechaVencimientoContrato(request.fechaVencimientoContrato())
-                .build();
-        return personaRepository.save(persona);
+        throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                "Las personas se crean automáticamente junto a su usuario. Registra un usuario nuevo.");
     }
 
     public List<Persona> listar() {
